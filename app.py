@@ -164,13 +164,10 @@ if st.button("Calculer les estimations"):
                         st.warning("Le point est en dehors de la zone de données (Extrapolation impossible).")
                     else:
                         # st.success affiche un message en vert
-                        st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}**")
+                        st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}** mm")
                         # st.info affiche un message en bleu
-                        st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}**")
+                        st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}** mm")
                 else:
                     all_success = False
             else:
                 all_success = False
-    
-    if all_success:
-        st.balloons() # Petite célébration si tout s'est bien passé !
