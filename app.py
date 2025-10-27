@@ -9,6 +9,7 @@ from streamlit_folium import st_folium
 # --- CONFIGURATION ---
 
 FILES_TO_PROCESS = {
+    "Historique": "synthese_pluviometrie_BASELINE.csv",
     "2030": "synthese_pluviometrie_2030.csv",
     "2050": "synthese_pluviometrie_2050.csv",
     "2100": "synthese_pluviometrie_2100.csv"
@@ -189,3 +190,4 @@ if st.button("Calculer les estimations pour le point sélectionné"):
         if all_success:
 
             st.balloons()
+
