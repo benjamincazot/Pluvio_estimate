@@ -179,12 +179,13 @@ if st.button("Calculer les estimations pour le point sélectionné"):
                         if np.isnan(data["moyenne"]):
                             st.warning("Le point est en dehors de la zone de données (Extrapolation impossible).")
                         else:
-                            st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}**")
-                            st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}**")
+                            st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}** mm")
+                            st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}** mm")
                     else:
                         all_success = False
                 else:
                     all_success = False
         
         if all_success:
+
             st.balloons()
