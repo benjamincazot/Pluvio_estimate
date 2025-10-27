@@ -6,7 +6,7 @@ from pathlib import Path
 import folium
 from streamlit_folium import st_folium
 
-# --- CONFIGURATION (Identique à avant) ---
+# --- CONFIGURATION ---
 
 FILES_TO_PROCESS = {
     "2030": "synthese_pluviometrie_2030.csv",
@@ -24,8 +24,7 @@ INTERPOLATION_METHOD = 'linear'
 # --- FIN CONFIGURATION ---
 
 
-# @st.cache_data est un "décorateur" qui dit à Streamlit de 
-# ne pas recharger ce fichier CSV à chaque interaction, pour plus de performance.
+# @st.cache_data : met en cache les fichiers CSV pour de meilleures performances
 @st.cache_data
 def load_data(file_path_str):
     """Charge et nettoie un fichier CSV."""
@@ -64,7 +63,6 @@ def load_data(file_path_str):
         errors='coerce'
     )
     
-    # Supprimer les lignes où les données critiques sont NaN
     df = df.dropna(subset=[COL_LAT, COL_LON, COL_PLUVIO_MOYENNE, COL_PLUVIO_EXCEP])
     
     return df
@@ -79,17 +77,11 @@ def get_interpolated_values(df, target_lat, target_lon):
         return None
 
     try:
-        # 1. Préparer les points (X, Y)
         points = df[[COL_LAT, COL_LON]].values
-        
-        # 2. Préparer les valeurs (Z)
         values_moyenne = df[COL_PLUVIO_MOYENNE].values
         values_excep = df[COL_PLUVIO_EXCEP].values
-
-        # 3. Définir le point cible (xi)
         target_point = np.array([target_lat, target_lon])
 
-        # 4. Exécuter l'interpolation
         result_moyenne = griddata(
             points,
             values_moyenne,
@@ -115,16 +107,11 @@ def get_interpolated_values(df, target_lat, target_lon):
 
 # --- PARTIE PRINCIPALE : L'INTERFACE WEB AVEC CARTE ---
 
-# st.set_page_config définit le titre de l'onglet dans le navigateur
 st.set_page_config(page_title="Interpolation Pluvio", layout="centered")
-
-# st.title affiche un titre principal
 st.title("🌦️ Outil d'interpolation de pluviométrie")
-
 st.markdown("Cliquez sur la carte pour sélectionner un point, puis cliquez sur 'Calculer'.")
 
-# 1. Initialiser st.session_state pour garder en mémoire les coordonnées
-# Valeurs par défaut centrées sur la France
+# 1. Initialiser st.session_state
 if "clicked_lat" not in st.session_state:
     st.session_state.clicked_lat = None
     st.session_state.clicked_lon = None
@@ -138,21 +125,30 @@ m = folium.Map(
     tiles="OpenStreetMap"
 )
 
+# --- NOUVEAUTÉ : Ajout du repère ---
+# 2.5. Ajouter un repère (Marker) si un point a déjà été cliqué
+if st.session_state.clicked_lat is not None:
+    folium.Marker(
+        location=[st.session_state.clicked_lat, st.session_state.clicked_lon],
+        popup=f"Lat: {st.session_state.clicked_lat:.4f}, Lon: {st.session_state.clicked_lon:.4f}",
+        icon=folium.Icon(color="red", icon="info-sign")
+    ).add_to(m)
+# --- FIN DE LA NOUVEAUTÉ ---
+
 # 3. Afficher la carte et capturer le clic
-# 'key' est important pour que la carte ne se réinitialise pas inutilement
 map_data = st_folium(m, key="folium_map", width=700, height=500)
 
 # 4. Traiter le clic
 if map_data and map_data.get("last_clicked"):
-    # Un clic a eu lieu, on met à jour la mémoire
     st.session_state.clicked_lat = map_data["last_clicked"]["lat"]
     st.session_state.clicked_lon = map_data["last_clicked"]["lng"]
-    
-    # On met aussi à jour le centre de la carte pour la prochaine fois
     st.session_state.center = [map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]]
-    st.session_state.zoom = 10 # Zoom un peu plus après le clic
+    st.session_state.zoom = 10
+    
+    # On force le script à se ré-exécuter pour afficher le nouveau repère immédiatement
+    st.rerun() 
 
-# 5. Afficher les coordonnées sélectionnées (feedback pour l'utilisateur)
+# 5. Afficher les coordonnées sélectionnées
 if st.session_state.clicked_lat:
     st.info(f"Coordonnées sélectionnées : Latitude = {st.session_state.clicked_lat:.4f}, Longitude = {st.session_state.clicked_lon:.4f}")
 else:
@@ -161,11 +157,9 @@ else:
 # 6. Bouton de calcul
 if st.button("Calculer les estimations pour le point sélectionné"):
     
-    # On vérifie si un point a bien été cliqué
-    if st.session_state.clicked_lat is None or st.session_state.clicked_lon is None:
+    if st.session_state.clicked_lat is None:
         st.warning("Veuillez d'abord cliquer sur la carte pour sélectionner un point.")
     else:
-        # On utilise les coordonnées stockées en mémoire
         user_lat = st.session_state.clicked_lat
         user_lon = st.session_state.clicked_lon
         
@@ -176,7 +170,6 @@ if st.button("Calculer les estimations pour le point sélectionné"):
             for horizon, filename in FILES_TO_PROCESS.items():
                 st.write(f"--- Horizon {horizon} ({filename}) ---")
                 
-                # On charge les données (en utilisant le cache)
                 df_data = load_data(filename)
                 
                 if df_data is not None:
@@ -184,12 +177,9 @@ if st.button("Calculer les estimations pour le point sélectionné"):
                     
                     if data:
                         if np.isnan(data["moyenne"]):
-                            # st.warning affiche un message en jaune
                             st.warning("Le point est en dehors de la zone de données (Extrapolation impossible).")
                         else:
-                            # st.success affiche un message en vert
                             st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}**")
-                            # st.info affiche un message en bleu
                             st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}**")
                     else:
                         all_success = False
@@ -197,4 +187,4 @@ if st.button("Calculer les estimations pour le point sélectionné"):
                     all_success = False
         
         if all_success:
-            st.balloons() # Petite célébration si tout s'est bien passé !
+            st.balloons()
