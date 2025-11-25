@@ -6,6 +6,8 @@ from pathlib import Path
 import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
 
 # --- CONFIGURATION ---
 
@@ -100,14 +102,13 @@ def plot_evolution(data_list, metric_key, title, y_label):
     # Valeur de référence (la première, donc 2020)
     ref_value = values[0] if len(values) > 0 else 1 
 
-    # Création de la figure (légèrement plus haute pour l'espace des étiquettes)
+    # Création de la figure
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # 2. Tracer les droites (Retour à la ligne simple, sans lissage)
-    # linestyle='-' assure une ligne continue droite entre les points
+    # 2. Tracer les droites
     ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8, linestyle='-', label='Tendance', zorder=1)
 
-    # 3. Tracer les points par-dessus la ligne
+    # 3. Tracer les points
     ax.scatter(years, values, color='#1f77b4', s=100, zorder=5)
 
     # 4. Annotations intelligentes
@@ -129,11 +130,11 @@ def plot_evolution(data_list, metric_key, title, y_label):
             text_label = f"{y:.1f}\n({sign}{pct:.1f}%)"
             font_color = color_cond
 
-        # Annotation centrée au-dessus du point avec petit fond blanc
+        # Annotation centrée au-dessus du point
         ax.annotate(
             text_label,
             xy=(x, y),
-            xytext=(0, 15), # Décalage vers le haut (pixels)
+            xytext=(0, 15), # Décalage vers le haut
             textcoords='offset points',
             ha='center',
             va='bottom',
@@ -147,22 +148,15 @@ def plot_evolution(data_list, metric_key, title, y_label):
     ax.set_title(title, pad=20, fontsize=12, fontweight='bold')
     ax.set_xlabel("Horizon")
     ax.set_ylabel(y_label)
-    ax.set_xticks(years) # Afficher uniquement les années disponibles sur l'axe X
+    ax.set_xticks(years)
     
-    # Grille légère
     ax.grid(True, linestyle=':', alpha=0.6)
-    
-    # Supprimer les cadres haut et droit (plus propre)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
     # --- AJUSTEMENT AUTOMATIQUE DES LIMITES ---
-    # On récupère les limites actuelles des données
     y_min_curr, y_max_curr = ax.get_ylim()
     y_range = y_max_curr - y_min_curr if y_max_curr != y_min_curr else 1.0
-    
-    # On ajoute 20% d'espace en haut pour le texte
-    # On ajoute 5% en bas pour ne pas coller à l'axe X
     ax.set_ylim(y_min_curr - (y_range * 0.05), y_max_curr + (y_range * 0.25))
     # ------------------------------------------
 
@@ -173,7 +167,7 @@ def plot_evolution(data_list, metric_key, title, y_label):
 # --- PARTIE PRINCIPALE : L'INTERFACE WEB ---
 
 st.title("🌦️ Outil d'interpolation de pluviométrie")
-st.markdown("Cliquez sur la carte pour sélectionner un point, puis cliquez sur 'Calculer'.")
+st.markdown("Recherchez une adresse ou cliquez sur la carte pour sélectionner un point.")
 
 # 1. Initialiser st.session_state
 if "clicked_lat" not in st.session_state:
@@ -182,6 +176,36 @@ if "clicked_lat" not in st.session_state:
     st.session_state.center = [46.2276, 2.2137]
     st.session_state.zoom = 6
 
+# --- NOUVEAU : BARRE DE RECHERCHE ---
+col_search, col_btn = st.columns([3, 1])
+with col_search:
+    address_search = st.text_input("Rechercher une ville / adresse :", placeholder="Ex: Bordeaux, France")
+with col_btn:
+    # On ajoute un espace vide pour aligner le bouton avec le champ texte
+    st.write("") 
+    st.write("")
+    if st.button("🔎 Rechercher"):
+        if address_search:
+            with st.spinner("Recherche de l'adresse..."):
+                try:
+                    # Initialisation du géocodeur Nominatim
+                    geolocator = Nominatim(user_agent="pluvio_app_streamlit")
+                    location = geolocator.geocode(address_search)
+                    
+                    if location:
+                        # Mise à jour de l'état avec les nouvelles coordonnées
+                        st.session_state.clicked_lat = location.latitude
+                        st.session_state.clicked_lon = location.longitude
+                        st.session_state.center = [location.latitude, location.longitude]
+                        st.session_state.zoom = 12 # Zoom plus proche sur la ville trouvée
+                        st.success(f"Adresse trouvée : {location.address}")
+                        # Pas besoin de rerun ici, Streamlit va redessiner la carte avec les nouvelles valeurs du session_state
+                    else:
+                        st.error("Adresse introuvable. Essayez d'être plus précis.")
+                except Exception as e:
+                    st.error(f"Erreur de connexion au service de géocodage : {e}")
+# ------------------------------------
+
 # 2. Créer la carte Folium
 m = folium.Map(
     location=st.session_state.center, 
@@ -189,7 +213,7 @@ m = folium.Map(
     tiles="OpenStreetMap"
 )
 
-# Ajout du repère si un point a été cliqué
+# Ajout du repère si un point a été cliqué ou trouvé par recherche
 if st.session_state.clicked_lat is not None:
     folium.Marker(
         location=[st.session_state.clicked_lat, st.session_state.clicked_lon],
@@ -200,25 +224,25 @@ if st.session_state.clicked_lat is not None:
 # 3. Afficher la carte et capturer le clic
 map_data = st_folium(m, key="folium_map", width=700, height=500)
 
-# 4. Traiter le clic
+# 4. Traiter le clic sur la carte
 if map_data and map_data.get("last_clicked"):
     st.session_state.clicked_lat = map_data["last_clicked"]["lat"]
     st.session_state.clicked_lon = map_data["last_clicked"]["lng"]
     st.session_state.center = [map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]]
-    st.session_state.zoom = 10
+    st.session_state.zoom = 10 # Zoom intermédiaire au clic
     st.rerun()
 
 # 5. Feedback utilisateur
 if st.session_state.clicked_lat:
-    st.info(f"Point sélectionné : Latitude = {st.session_state.clicked_lat:.4f}, Longitude = {st.session_state.clicked_lon:.4f}")
+    st.info(f"📍 Point sélectionné : Latitude = {st.session_state.clicked_lat:.4f}, Longitude = {st.session_state.clicked_lon:.4f}")
 else:
-    st.info("Veuillez cliquer sur la carte pour sélectionner un point.")
+    st.info("Veuillez rechercher une adresse ou cliquer sur la carte.")
 
 # 6. Bouton de calcul
-if st.button("Calculer les estimations et afficher les graphiques"):
+if st.button("Calculer les estimations et afficher les graphiques", type="primary"):
     
     if st.session_state.clicked_lat is None:
-        st.warning("Veuillez d'abord cliquer sur la carte.")
+        st.warning("Veuillez d'abord sélectionner un point (Recherche ou Clic).")
     else:
         user_lat = st.session_state.clicked_lat
         user_lon = st.session_state.clicked_lon
@@ -274,7 +298,6 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                     "Pluviométrie Moyenne", 
                     "Pluviométrie (mm)"
                 )
-                # use_container_width=True permet d'adapter l'image à la colonne
                 st.pyplot(fig1, use_container_width=True)
             
             with col2:
