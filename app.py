@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, make_interp_spline
 import numpy as np
 from pathlib import Path
 import folium
@@ -27,13 +27,15 @@ INTERPOLATION_METHOD = 'linear'
 
 # --- FIN CONFIGURATION ---
 
+# Configuration de la page (Doit être la première commande Streamlit)
+st.set_page_config(page_title="Interpolation Pluvio", layout="centered")
+
 
 @st.cache_data
 def load_data(file_path_str):
     """Charge et nettoie un fichier CSV."""
     file_path = Path(file_path_str)
     if not file_path.exists():
-        # On retourne None silencieusement ici, l'erreur sera gérée dans la boucle principale
         return None
         
     try:
@@ -45,7 +47,6 @@ def load_data(file_path_str):
     except Exception:
         return None
 
-    # Liste des colonnes à nettoyer
     cols_to_clean = [COL_PLUVIO_MOYENNE, COL_PLUVIO_EXCEP, COL_LAT, COL_LON]
     
     for col in cols_to_clean:
@@ -58,7 +59,6 @@ def load_data(file_path_str):
     
     # Suppression des lignes incomplètes
     df = df.dropna(subset=[COL_LAT, COL_LON, COL_PLUVIO_MOYENNE, COL_PLUVIO_EXCEP])
-    
     return df
 
 
@@ -74,19 +74,12 @@ def get_interpolated_values(df, target_lat, target_lon):
         target_point = np.array([target_lat, target_lon])
 
         result_moyenne = griddata(
-            points,
-            values_moyenne,
-            target_point,
-            method=INTERPOLATION_METHOD,
-            fill_value=np.nan 
+            points, values_moyenne, target_point,
+            method=INTERPOLATION_METHOD, fill_value=np.nan 
         )
-        
         result_excep = griddata(
-            points,
-            values_excep,
-            target_point,
-            method=INTERPOLATION_METHOD,
-            fill_value=np.nan
+            points, values_excep, target_point,
+            method=INTERPOLATION_METHOD, fill_value=np.nan
         )
         
         return {"moyenne": result_moyenne.item(), "exceptionnelle": result_excep.item()}
@@ -97,65 +90,105 @@ def get_interpolated_values(df, target_lat, target_lon):
 
 def plot_evolution(data_list, metric_key, title, y_label):
     """
-    Génère un graphique Matplotlib avec les % d'évolution.
+    Génère un graphique Matplotlib lissé avec annotations optimisées.
     """
-    # Trier par année (clé 'year')
+    # 1. Préparation des données
     data_list.sort(key=lambda x: x['year'])
+    years = np.array([d['year'] for d in data_list])
+    values = np.array([d[metric_key] for d in data_list])
     
-    years = [d['year'] for d in data_list]
-    values = [d[metric_key] for d in data_list]
-    
-    # La référence est la première valeur (2020)
-    ref_value = values[0] if values else 1 
+    # Valeur de référence (la première, donc 2020)
+    ref_value = values[0] if len(values) > 0 else 1 
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # Création de la figure (légèrement plus haute pour l'espace des étiquettes)
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # 2. Lissage de la courbe (Spline Interpolation)
+    # On crée 300 points entre l'année min et max pour avoir une courbe fluide
+    years_smooth = np.linspace(years.min(), years.max(), 300)
     
-    # Tracer la ligne et les points
-    ax.plot(years, values, marker='o', linestyle='-', color='#1f77b4', linewidth=2, markersize=8)
+    # Gestion du degré de lissage (k) selon le nombre de points
+    # k=3 (cubique) est idéal, mais nécessite au moins 4 points.
+    k_val = 3 if len(years) > 3 else (2 if len(years) > 2 else 1)
     
-    # Ajouter les annotations
+    try:
+        if len(years) > 2:
+            spl = make_interp_spline(years, values, k=k_val)
+            values_smooth = spl(years_smooth)
+            # Tracer la courbe lisse
+            ax.plot(years_smooth, values_smooth, color='#1f77b4', linewidth=2.5, alpha=0.8, label='Tendance')
+        else:
+            # Fallback linéaire s'il n'y a pas assez de points pour lisser
+            ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8)
+    except Exception:
+        # Sécurité : Fallback linéaire
+        ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8)
+
+    # 3. Tracer les vrais points par-dessus la courbe
+    ax.scatter(years, values, color='#1f77b4', s=100, zorder=5)
+
+    # 4. Annotations intelligentes
     for x, y in zip(years, values):
-        # Décalage vertical pour le texte
-        offset = y * 0.02 
         
         if x == 2020:
-            # Pour l'historique 2020
-            ax.text(x, y + offset, f"{y:.1f}\n(Réf.)", ha='center', va='bottom', fontsize=9, fontweight='bold', color='black')
+            text_label = f"{y:.1f}\n(Réf.)"
+            font_color = 'black'
         else:
-            # Calcul du pourcentage d'évolution par rapport à la référence (2020)
+            # Calcul du %
             if ref_value != 0:
                 pct = ((y - ref_value) / ref_value) * 100
             else:
                 pct = 0
             
-            # Couleur conditionnelle (Vert si positif, Rouge si négatif)
-            color = 'green' if pct >= 0 else 'red'
+            # Couleur conditionnelle
+            color_cond = 'green' if pct >= 0 else 'red'
             sign = '+' if pct >= 0 else ''
-            
-            label = f"{y:.1f}\n({sign}{pct:.1f}%)"
-            
-            # Affichage du texte
-            ax.text(x, y + offset, label, ha='center', va='bottom', 
-                    color=color, fontsize=9, fontweight='bold')
+            text_label = f"{y:.1f}\n({sign}{pct:.1f}%)"
+            font_color = color_cond
 
-    ax.set_title(title)
+        # Annotation centrée au-dessus du point avec petit fond blanc
+        ax.annotate(
+            text_label,
+            xy=(x, y),
+            xytext=(0, 15), # Décalage vers le haut (pixels)
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontsize=9,
+            fontweight='bold',
+            color=font_color,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.6)
+        )
+
+    # 5. Esthétique et Marges
+    ax.set_title(title, pad=20, fontsize=12, fontweight='bold')
     ax.set_xlabel("Horizon")
     ax.set_ylabel(y_label)
+    ax.set_xticks(years) # Afficher uniquement les années disponibles sur l'axe X
     
-    # Définir les ticks de l'axe X pour n'afficher que nos années
-    ax.set_xticks(years)
+    # Grille légère
+    ax.grid(True, linestyle=':', alpha=0.6)
     
-    ax.grid(True, linestyle='--', alpha=0.6)
+    # Supprimer les cadres haut et droit (plus propre)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # --- AJUSTEMENT AUTOMATIQUE DES LIMITES ---
+    # On récupère les limites actuelles des données
+    y_min_curr, y_max_curr = ax.get_ylim()
+    y_range = y_max_curr - y_min_curr if y_max_curr != y_min_curr else 1.0
     
-    # Marges automatiques
+    # On ajoute 20% d'espace en haut pour le texte
+    # On ajoute 5% en bas pour ne pas coller à l'axe X
+    ax.set_ylim(y_min_curr - (y_range * 0.05), y_max_curr + (y_range * 0.25))
+    # ------------------------------------------
+
     plt.tight_layout()
-    
     return fig
 
 
 # --- PARTIE PRINCIPALE : L'INTERFACE WEB ---
 
-st.set_page_config(page_title="Interpolation Pluvio", layout="centered")
 st.title("🌦️ Outil d'interpolation de pluviométrie")
 st.markdown("Cliquez sur la carte pour sélectionner un point, puis cliquez sur 'Calculer'.")
 
@@ -173,7 +206,7 @@ m = folium.Map(
     tiles="OpenStreetMap"
 )
 
-# 2.5. Ajouter un repère si un point a été cliqué
+# Ajout du repère si un point a été cliqué
 if st.session_state.clicked_lat is not None:
     folium.Marker(
         location=[st.session_state.clicked_lat, st.session_state.clicked_lon],
@@ -207,21 +240,17 @@ if st.button("Calculer les estimations et afficher les graphiques"):
         user_lat = st.session_state.clicked_lat
         user_lon = st.session_state.clicked_lon
         
-        # Liste pour stocker les données pour les futurs graphiques
+        # Liste pour stocker les données pour les graphiques
         plot_data = []
         
         with st.spinner("Calcul en cours..."):
             st.subheader(f"Résultats pour (Lat={user_lat:.4f}, Lon={user_lon:.4f})")
             
-            # On trie les clés (2020, 2030, etc.) pour afficher dans l'ordre
             sorted_horizons = sorted(FILES_TO_PROCESS.keys())
-            
             all_success = True
             
             for horizon in sorted_horizons:
                 filename = FILES_TO_PROCESS[horizon]
-                
-                # Petit affichage esthétique pour différencier 2020 des autres
                 display_title = f"Horizon {horizon}" if horizon != "2020" else "Historique (2020)"
                 st.write(f"--- {display_title} ---")
                 
@@ -229,7 +258,6 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                 
                 if df_data is not None:
                     data = get_interpolated_values(df_data, user_lat, user_lon)
-                    
                     if data:
                         if np.isnan(data["moyenne"]):
                             st.warning("Extrapolation impossible (hors zone).")
@@ -237,7 +265,6 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                             st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}** mm")
                             st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}** mm")
                             
-                            # On ajoute les données à la liste pour les graphiques
                             plot_data.append({
                                 'year': int(horizon),
                                 'moyenne': data['moyenne'],
@@ -250,29 +277,27 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                     st.error(f"Fichier introuvable : {filename}")
                     all_success = False
 
-        # --- Affichage des graphiques en bas de page ---
+        # --- Affichage des graphiques ---
         if all_success and len(plot_data) > 0:
             st.markdown("---")
-            st.subheader("📈 Évolution temporelle")
+            st.subheader("📈 Évolution temporelle (Tendances)")
             
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("### Pluviométrie Moyenne")
                 fig1 = plot_evolution(
                     plot_data, 
                     'moyenne', 
-                    "Évolution Pluviométrie Moyenne", 
+                    "Pluviométrie Moyenne", 
                     "Pluviométrie (mm)"
                 )
                 st.pyplot(fig1)
             
             with col2:
-                st.write("### Pluviométrie Exceptionnelle")
                 fig2 = plot_evolution(
                     plot_data, 
                     'exceptionnelle', 
-                    "Évolution Pluviométrie Exceptionnelle", 
+                    "Pluviométrie Exceptionnelle", 
                     "Pluviométrie (mm)"
                 )
                 st.pyplot(fig2)
