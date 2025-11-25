@@ -4,3 +4,4 @@ scipy
 numpy
 folium
 streamlit-folium
+matplotlib
