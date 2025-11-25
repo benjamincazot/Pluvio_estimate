@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from scipy.interpolate import griddata, make_interp_spline
+from scipy.interpolate import griddata
 import numpy as np
 from pathlib import Path
 import folium
@@ -90,7 +90,7 @@ def get_interpolated_values(df, target_lat, target_lon):
 
 def plot_evolution(data_list, metric_key, title, y_label):
     """
-    Génère un graphique Matplotlib lissé avec annotations optimisées.
+    Génère un graphique Matplotlib avec droites simples et annotations optimisées.
     """
     # 1. Préparation des données
     data_list.sort(key=lambda x: x['year'])
@@ -103,28 +103,11 @@ def plot_evolution(data_list, metric_key, title, y_label):
     # Création de la figure (légèrement plus haute pour l'espace des étiquettes)
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # 2. Lissage de la courbe (Spline Interpolation)
-    # On crée 300 points entre l'année min et max pour avoir une courbe fluide
-    years_smooth = np.linspace(years.min(), years.max(), 300)
-    
-    # Gestion du degré de lissage (k) selon le nombre de points
-    # k=3 (cubique) est idéal, mais nécessite au moins 4 points.
-    k_val = 3 if len(years) > 3 else (2 if len(years) > 2 else 1)
-    
-    try:
-        if len(years) > 2:
-            spl = make_interp_spline(years, values, k=k_val)
-            values_smooth = spl(years_smooth)
-            # Tracer la courbe lisse
-            ax.plot(years_smooth, values_smooth, color='#1f77b4', linewidth=2.5, alpha=0.8, label='Tendance')
-        else:
-            # Fallback linéaire s'il n'y a pas assez de points pour lisser
-            ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8)
-    except Exception:
-        # Sécurité : Fallback linéaire
-        ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8)
+    # 2. Tracer les droites (Retour à la ligne simple, sans lissage)
+    # linestyle='-' assure une ligne continue droite entre les points
+    ax.plot(years, values, color='#1f77b4', linewidth=2.5, alpha=0.8, linestyle='-', label='Tendance', zorder=1)
 
-    # 3. Tracer les vrais points par-dessus la courbe
+    # 3. Tracer les points par-dessus la ligne
     ax.scatter(years, values, color='#1f77b4', s=100, zorder=5)
 
     # 4. Annotations intelligentes
@@ -291,7 +274,8 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                     "Pluviométrie Moyenne", 
                     "Pluviométrie (mm)"
                 )
-                st.pyplot(fig1)
+                # use_container_width=True permet d'adapter l'image à la colonne
+                st.pyplot(fig1, use_container_width=True)
             
             with col2:
                 fig2 = plot_evolution(
@@ -300,6 +284,6 @@ if st.button("Calculer les estimations et afficher les graphiques"):
                     "Pluviométrie Exceptionnelle", 
                     "Pluviométrie (mm)"
                 )
-                st.pyplot(fig2)
+                st.pyplot(fig2, use_container_width=True)
             
             st.balloons()
