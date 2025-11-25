@@ -190,7 +190,8 @@ with col_btn:
                 try:
                     # Initialisation du géocodeur Nominatim
                     geolocator = Nominatim(user_agent="pluvio_app_streamlit")
-                    location = geolocator.geocode(address_search)
+                    # Ajout d'un timeout de 10 secondes pour éviter les erreurs de lecture
+                    location = geolocator.geocode(address_search, timeout=10)
                     
                     if location:
                         # Mise à jour de l'état avec les nouvelles coordonnées
