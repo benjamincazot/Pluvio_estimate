@@ -176,35 +176,38 @@ if "clicked_lat" not in st.session_state:
     st.session_state.center = [46.2276, 2.2137]
     st.session_state.zoom = 6
 
-# --- NOUVEAU : BARRE DE RECHERCHE ---
-col_search, col_btn = st.columns([3, 1])
-with col_search:
-    address_search = st.text_input("Rechercher une ville / adresse :", placeholder="Ex: Bordeaux, France")
-with col_btn:
-    # On ajoute un espace vide pour aligner le bouton avec le champ texte
-    st.write("") 
-    st.write("")
-    if st.button("🔎 Rechercher"):
-        if address_search:
-            with st.spinner("Recherche de l'adresse..."):
-                try:
-                    # Initialisation du géocodeur Nominatim
-                    geolocator = Nominatim(user_agent="pluvio_app_streamlit")
-                    # Ajout d'un timeout de 10 secondes pour éviter les erreurs de lecture
-                    location = geolocator.geocode(address_search, timeout=10)
-                    
-                    if location:
-                        # Mise à jour de l'état avec les nouvelles coordonnées
-                        st.session_state.clicked_lat = location.latitude
-                        st.session_state.clicked_lon = location.longitude
-                        st.session_state.center = [location.latitude, location.longitude]
-                        st.session_state.zoom = 12 # Zoom plus proche sur la ville trouvée
-                        st.success(f"Adresse trouvée : {location.address}")
-                        # Pas besoin de rerun ici, Streamlit va redessiner la carte avec les nouvelles valeurs du session_state
-                    else:
-                        st.error("Adresse introuvable. Essayez d'être plus précis.")
-                except Exception as e:
-                    st.error(f"Erreur de connexion au service de géocodage : {e}")
+# --- NOUVEAU : BARRE DE RECHERCHE AVEC FORMULAIRE ---
+# L'utilisation de st.form permet de valider avec la touche "Entrée"
+with st.form(key='search_form'):
+    col_search, col_btn = st.columns([3, 1])
+    with col_search:
+        address_search = st.text_input("Rechercher une ville / adresse :", placeholder="Ex: Bordeaux, France")
+    with col_btn:
+        # On ajoute un espace vide pour aligner le bouton avec le champ texte
+        st.write("") 
+        st.write("")
+        # Le bouton de soumission du formulaire
+        submit_search = st.form_submit_button("🔎 Rechercher")
+
+if submit_search and address_search:
+    with st.spinner("Recherche de l'adresse..."):
+        try:
+            # Initialisation du géocodeur Nominatim
+            geolocator = Nominatim(user_agent="pluvio_app_streamlit")
+            # Ajout d'un timeout de 10 secondes pour éviter les erreurs de lecture
+            location = geolocator.geocode(address_search, timeout=10)
+            
+            if location:
+                # Mise à jour de l'état avec les nouvelles coordonnées
+                st.session_state.clicked_lat = location.latitude
+                st.session_state.clicked_lon = location.longitude
+                st.session_state.center = [location.latitude, location.longitude]
+                st.session_state.zoom = 12 # Zoom plus proche sur la ville trouvée
+                st.success(f"Adresse trouvée : {location.address}")
+            else:
+                st.error("Adresse introuvable. Essayez d'être plus précis.")
+        except Exception as e:
+            st.error(f"Erreur de connexion au service de géocodage : {e}")
 # ------------------------------------
 
 # 2. Créer la carte Folium
