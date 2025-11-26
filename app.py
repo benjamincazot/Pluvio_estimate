@@ -273,8 +273,8 @@ if st.button("Calculer les estimations et afficher les graphiques", type="primar
                         if np.isnan(data["moyenne"]):
                             st.warning("Extrapolation impossible (hors zone).")
                         else:
-                            st.success(f"PLUVIOMETRIE moyenne  : **{data['moyenne']:.2f}** mm")
-                            st.info(f"PLUVIO EXCEPTIONNELLE : **{data['exceptionnelle']:.2f}** mm")
+                            st.success(f"Pluviométrie moyenne annuelle  : **{data['moyenne']:.2f}** mm")
+                            st.info(f"Intensité des pluviométries exceptionnelles (top 1%) : **{data['exceptionnelle']:.2f}** mm")
                             
                             plot_data.append({
                                 'year': int(horizon),
@@ -314,3 +314,4 @@ if st.button("Calculer les estimations et afficher les graphiques", type="primar
                 st.pyplot(fig2, use_container_width=True)
             
             st.balloons()
+
